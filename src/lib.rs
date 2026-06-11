@@ -45,7 +45,7 @@ struct Job {
 unsafe impl Send for Job {}
 
 extern "C" fn run_in_threads_callback(
-    _sync: c_int, // TODO what does this mean?
+    _sync: c_int, // Appears hard-coded to 1 in OpenBLAS
     dojob: openblas_dojob_callback,
     numjobs: c_int,
     jobdata_elsize: usize,
@@ -56,11 +56,21 @@ extern "C" fn run_in_threads_callback(
     let jobdata_elsize = jobdata_elsize as isize;
     let dojob = dojob.unwrap();
 
+    // If the number of threads is 1, seems like OpenBLAS calls the calculation
+    // asynchronously so no need to do that optimization.
+
     // Create threads:
     let num_threads = unsafe { openblas_get_num_threads.get().unwrap()() } as usize;
+    let num_threads = num_threads.min(numjobs);
+
     println!(
         "STARTING CUSTOM THREAD POOL WITH {num_threads} threads to run {numjobs} jobs from OpenBLAS"
     );
+
+    // Empirically it seems like number of jobs is always <= number of threads.
+    // If that is part of the contract, one could therefore omit the channels.
+    // However... who knows what will happen in the future, it's not like it's
+    // well-documented.
     thread::scope(|scope| {
         let mut threads = vec![];
         let mut txs = vec![];
