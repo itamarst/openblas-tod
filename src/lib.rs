@@ -58,7 +58,9 @@ extern "C" fn run_in_threads_callback(
 
     // Create threads:
     let num_threads = unsafe { openblas_get_num_threads.get().unwrap()() } as usize;
-
+    println!(
+        "STARTING CUSTOM THREAD POOL WITH {num_threads} threads to run {numjobs} jobs from OpenBLAS"
+    );
     thread::scope(|scope| {
         let mut threads = vec![];
         let mut txs = vec![];
