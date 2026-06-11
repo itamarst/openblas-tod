@@ -11,3 +11,8 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dynamic = ["version"]
+dependencies = ["threadpoolctl"]
+
+[tool.maturin]
+python-source = "python"
+module-name = "openblas_tod._openblas_tod"

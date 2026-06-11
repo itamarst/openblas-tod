@@ -9,4 +9,5 @@ name = "openblas_tod"
 crate-type = ["cdylib"]
 
 [dependencies]
+libloading = "0.9.0"
 pyo3 = "0.28.3"
