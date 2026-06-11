@@ -1,4 +1,9 @@
-use std::{ffi::c_int, os::raw::c_void, sync::OnceLock};
+use std::{
+    ffi::c_int,
+    os::raw::c_void,
+    sync::{OnceLock, mpsc::channel},
+    thread,
+};
 
 use pyo3::prelude::*;
 
@@ -31,22 +36,58 @@ fn install(
     Ok(())
 }
 
+struct Job {
+    thread_num: c_int,
+    data: *mut c_void,
+}
+
+/// These pointers are designed to be run in other threads:
+unsafe impl Send for Job {}
+
 extern "C" fn run_in_threads_callback(
-    sync: c_int,
+    _sync: c_int, // TODO what does this mean?
     dojob: openblas_dojob_callback,
     numjobs: c_int,
     jobdata_elsize: usize,
     jobdata: *mut c_void,
     dojob_data: c_int,
 ) {
-    println!("RUN IN THREAD!");
-    let numjobs = numjobs as isize;
+    let numjobs = numjobs as usize;
     let jobdata_elsize = jobdata_elsize as isize;
-    // TODO no thread pool yet
-    for i in 0..numjobs {
-        let element_addr = unsafe { jobdata.byte_offset(i * jobdata_elsize) };
-        dojob.unwrap()(i as c_int, element_addr, dojob_data);
-    }
+    let dojob = dojob.unwrap();
+
+    // Create threads:
+    let num_threads = unsafe { openblas_get_num_threads.get().unwrap()() } as usize;
+
+    thread::scope(|scope| {
+        let mut threads = vec![];
+        let mut txs = vec![];
+
+        for _ in 0..num_threads {
+            let (tx, rx) = channel::<Job>();
+            threads.push(scope.spawn(|| {
+                for job in rx {
+                    dojob(job.thread_num, job.data, dojob_data);
+                }
+            }));
+            txs.push(tx);
+        }
+
+        for i in 0..numjobs {
+            let data = unsafe { jobdata.byte_offset((i as isize) * jobdata_elsize) };
+            txs[i.rem_euclid(num_threads)]
+                .send(Job {
+                    thread_num: i as c_int,
+                    data,
+                })
+                .unwrap();
+        }
+        drop(txs);
+
+        for t in threads {
+            t.join().unwrap();
+        }
+    });
 }
 
 /// Switch out OpenBLAS pthreads global thread pool module with an on-demand
