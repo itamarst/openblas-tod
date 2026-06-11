@@ -18,6 +18,9 @@ def install() -> None:
             and library["threading_layer"] == "pthreads"
         ):
             _install(library["filepath"])
+            return
+
+    raise RuntimeError("No suitable OpenBLAS found")
 
 
 __all__ = ["install"]
