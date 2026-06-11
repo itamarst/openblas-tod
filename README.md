@@ -1,7 +1,4 @@
-# OpenBLAS-TOD
-
-I forget what acronym "TOD" was supposed to stand for, "thread something something".
-Perhaps a better name should be chosen.
+# OpenBLAS-TOD: Replace the global OpenBLAS thread pool with threads on demand
 
 The goal:
 
