@@ -29,22 +29,26 @@ static openblas_get_num_threads: OnceLock<Symbol<unsafe extern "C" fn() -> c_int
 
 fn install(dll_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let library = unsafe { Library::new(dll_path)? };
-    OPENBLAS.set(library);
-    openblas_get_num_threads.set(
+    OPENBLAS.set(library).unwrap();
+    openblas_get_num_threads
+        .set(unsafe {
+            OPENBLAS
+                .get()
+                .unwrap()
+                .get(b"openblas_get_num_threads")
+                .unwrap()
+        })
+        .unwrap();
+    let install_threads_callback: Symbol<
+        unsafe extern "C" fn(callback: openblas_threads_callback),
+    > = unsafe {
         OPENBLAS
             .get()
             .unwrap()
-            .get(b"openblas_get_num_threads")
-            .unwrap()?,
-    );
-    let install_threads_callback: Symbol<
-        unsafe extern "C" fn(callback: openblas_threads_callback),
-    > = OPENBLAS
-        .get()
-        .unwrap()
-        .get(b"openblas_set_threads_callback_function")
-        .unwrap(); // TODO older versions won't have this API...
-    install_threads_callback(Some(run_in_threads_callback));
+            .get(b"openblas_set_threads_callback_function")
+            .unwrap()
+    }; // TODO older versions won't have this API...
+    unsafe { install_threads_callback(Some(run_in_threads_callback)) };
     Ok(())
 }
 
@@ -69,7 +73,7 @@ extern "C" fn run_in_threads_callback(
 /// thread pool, per thread. This matches the behavior of OpenBLAS compiled with
 /// OpenMP.
 #[pymodule]
-mod openblas_tod {
+mod _openblas_tod {
     use super::install;
     use pyo3::prelude::*;
 
