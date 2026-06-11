@@ -1,4 +1,3 @@
-use libloading::{Library, Symbol};
 use std::{ffi::c_int, os::raw::c_void, sync::OnceLock};
 
 use pyo3::prelude::*;
@@ -19,35 +18,15 @@ pub type openblas_threads_callback = Option<
     ),
 >;
 
-/// The loaded OpenBLAS library, once we have it:
-static OPENBLAS: OnceLock<Library> = OnceLock::new();
-
 /// API to get number of threads:
 #[allow(non_upper_case_globals)]
-static openblas_get_num_threads: OnceLock<Symbol<unsafe extern "C" fn() -> c_int>> =
-    OnceLock::new();
+static openblas_get_num_threads: OnceLock<unsafe extern "C" fn() -> c_int> = OnceLock::new();
 
-fn install(dll_path: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let library = unsafe { Library::new(dll_path)? };
-    OPENBLAS.set(library).unwrap();
-    openblas_get_num_threads
-        .set(unsafe {
-            OPENBLAS
-                .get()
-                .unwrap()
-                .get(b"openblas_get_num_threads")
-                .unwrap()
-        })
-        .unwrap();
-    let install_threads_callback: Symbol<
-        unsafe extern "C" fn(callback: openblas_threads_callback),
-    > = unsafe {
-        OPENBLAS
-            .get()
-            .unwrap()
-            .get(b"openblas_set_threads_callback_function")
-            .unwrap()
-    }; // TODO older versions won't have this API...
+fn install(
+    get_num_threads: unsafe extern "C" fn() -> c_int,
+    install_threads_callback: unsafe extern "C" fn(callback: openblas_threads_callback),
+) -> Result<(), Box<dyn std::error::Error>> {
+    openblas_get_num_threads.set(get_num_threads).unwrap();
     unsafe { install_threads_callback(Some(run_in_threads_callback)) };
     Ok(())
 }
@@ -60,6 +39,7 @@ extern "C" fn run_in_threads_callback(
     jobdata: *mut c_void,
     dojob_data: c_int,
 ) {
+    println!("RUN IN THREAD!");
     let numjobs = numjobs as isize;
     let jobdata_elsize = jobdata_elsize as isize;
     // TODO no thread pool yet
@@ -74,13 +54,19 @@ extern "C" fn run_in_threads_callback(
 /// OpenMP.
 #[pymodule]
 mod _openblas_tod {
+    use std::{ffi::c_void, mem::transmute};
+
     use super::install;
     use pyo3::prelude::*;
 
     /// Install a new thread pool model into the given OpenBLAS shared library.
     #[pyfunction]
-    fn _install(dll_path: &str) -> PyResult<()> {
-        install(dll_path).unwrap();
+    fn _install(get_num_threads_addr: usize, install_threads_callback_addr: usize) -> PyResult<()> {
+        install(
+            unsafe { transmute(get_num_threads_addr as *const c_void) },
+            unsafe { transmute(install_threads_callback_addr as *const c_void) },
+        )
+        .unwrap();
         Ok(())
     }
 }
